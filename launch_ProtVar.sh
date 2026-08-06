@@ -13,9 +13,19 @@ assembly=$2   # GRCh37 or GRCh38
 job_label=$3
 
 # Validate that required arguments are provided
-if [ -z "$input_file" ] || [ -z "$job_label" ]; then
+if [ -z "$input_file" ] || [ -z "$assembly" ] || [ -z "$job_label" ]; then
     echo "Error: Missing arguments."
-    echo "Usage: $0 <variants_file.txt> <job_label>"
+    echo "Usage: $0 <variants_file.txt> <assembly> <job_label>"
+    if [ -z "$assembly" ]; then
+        echo "Note: The <assembly> argument can take the values: GRCh37 or GRCh38."
+    fi
+    exit 1
+fi
+
+if [ "$assembly" != "GRCh37" ] && [ "$assembly" != "GRCh38" ]; then
+    echo "Error: Invalid assembly value '$assembly'."
+    echo "Allowed values for <assembly>: GRCh37 or GRCh38."
+    echo "Usage: $0 <variants_file.txt> <assembly> <job_label>"
     exit 1
 fi
 
