@@ -36,21 +36,23 @@ echo "========================================================="
 tmp_dir=$(mktemp -d -t "protvar_${job_label}_XXXXXX")
 trap 'rm -rf "$tmp_dir"' EXIT
 
-# Split the original file into chunks of 100 lines each
-# This will generate files with a 2-digit numeric suffix: batch_00, batch_01, etc.
-split -l 100000 -d -a 3 "data/${input_file}" "${tmp_dir}/batch_"
+mkdir -p "${tmp_dir}/inputs" "${tmp_dir}/outputs"
+
+# Split the original file into chunks of 100000 lines each
+# This will generate files with a 3-digit numeric suffix: batch_000, batch_001, etc.
+split -l 100000 -d -a 3 "data/${input_file}" "${tmp_dir}/inputs/batch_"
 
 # Loop to process each batch sequentially
-for batch_path in "${tmp_dir}"/batch_*; do
-    # Extract only the filename (e.g., batch_00)
+for batch_path in "${tmp_dir}/inputs"/batch_*; do
+    # Extract only the filename (e.g., batch_000)
     batch_name=$(basename "$batch_path")
     
     echo "========================================================="
     echo "Processing sub-batch: ${batch_name}"
     echo "========================================================="
 
-    # Define the specific output directory for this batch
-    batch_outdir="results/${job_label}/${batch_name}"
+    # Define the specific output directory for this batch (inside tmp_dir/outputs)
+    batch_outdir="${tmp_dir}/outputs/${batch_name}"
     mkdir -p "$batch_outdir"
 
     # 1. Uploads a variant file
@@ -96,11 +98,12 @@ echo "========================================================="
 echo "Aggregates all batch results into a single CSV file..."
 echo "========================================================="
 
+mkdir -p "results/${job_label}"
 final_output="results/${job_label}/${job_label}_results.csv"
 first_file=true
 
-# Loop through all unzipped .csv files in the batch directories
-for csv_file in results/"${job_label}"/batch_*/*.csv; do
+# Loop through all unzipped .csv files in the temporary batch directories
+for csv_file in "${tmp_dir}/outputs"/batch_*/*.csv; do
     # Check if the file exists to avoid errors if no CSVs were found
     if [ -f "$csv_file" ]; then
         if [ "$first_file" = true ]; then
