@@ -33,8 +33,8 @@ echo "Preparing batches of 100000 variants..."
 echo "========================================================="
 
 # Temporary directory for the split file chunks
-tmp_dir="data/tmp_${job_label}"
-mkdir -p "$tmp_dir"
+tmp_dir=$(mktemp -d -t "protvar_${job_label}_XXXXXX")
+trap 'rm -rf "$tmp_dir"' EXIT
 
 # Split the original file into chunks of 100 lines each
 # This will generate files with a 2-digit numeric suffix: batch_00, batch_01, etc.
@@ -70,8 +70,6 @@ for batch_path in "${tmp_dir}"/batch_*; do
         status_code=$?
         if [ $status_code -eq 2 ]; then
             echo "The job ${batch_name} has failed (failed/expired state). Aborting workflow."
-            # Clean up the temporary directory before aborting due to an error
-            rm -rf "$tmp_dir"
             exit 1
         fi
         echo "Not ready yet. Waiting 10 seconds..."
@@ -122,8 +120,8 @@ echo "Merged file created at: $final_output"
 final_output_tsv="results/${job_label}/${job_label}_results.tsv"
 python3 -c "import csv, sys; w=csv.writer(sys.stdout, delimiter='\t'); w.writerows(csv.reader(sys.stdin))" < "$final_output" > "$final_output_tsv"
 
-# Clean up the temporary directory upon successful completion and tsv final file
-rm -rf "$tmp_dir" "$final_output"
+# Clean up the intermediate CSV file (temporary directory is cleaned up by EXIT trap)
+rm -f "$final_output"
 
 echo "========================================================="
 echo "Process completed for all batches!"
