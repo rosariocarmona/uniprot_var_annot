@@ -129,7 +129,7 @@ done
 
 echo "Merged file created at: $final_output"
 
-# Converts csv in tsv
+# Convert CSV to TSV
 final_output_tsv="results/${job_label}/${job_label}_results.tsv"
 python3 -c "import csv, sys; w=csv.writer(sys.stdout, delimiter='\t'); w.writerows(csv.reader(sys.stdin))" < "$final_output" > "$final_output_tsv"
 
