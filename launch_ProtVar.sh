@@ -130,7 +130,7 @@ done
 echo "Merged file created at: $final_output"
 
 # Convert CSV to TSV
-final_output_tsv="results/${job_label}/${job_label}_results.tsv"
+final_output_tsv="results/${job_label}/ProtVarAPIoutput_${job_label}.tsv"
 python3 -c "import csv, sys; w=csv.writer(sys.stdout, delimiter='\t'); w.writerows(csv.reader(sys.stdin))" < "$final_output" > "$final_output_tsv"
 
 # Clean up the intermediate CSV file (temporary directory is cleaned up by EXIT trap)
