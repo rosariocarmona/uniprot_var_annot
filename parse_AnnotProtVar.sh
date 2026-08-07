@@ -35,6 +35,8 @@ input_file=$1
 #     42  Diseases_associated_with_variant  ->
 
 
+output_file=${2:-"parsed_${input_file}"}
+
 while read line; do 
 
     user_variant=`echo "${line}" | cut -f 1`
@@ -46,65 +48,33 @@ while read line; do
     aa_acid_position=`echo "${line}" | cut -f 17`
     aa_acid_change=`echo "${line}" | cut -f 18`
     aa_acid_change_4manual=`echo -e "p.${aa_acid_change}" | sed "s/\//${aa_acid_position}/g"`
-    new_aa_acid=`echo "${aa_acid_change}" | cut -d'/' -f 2`    # Para búsqueda de PTMs
     residue_function=`echo "${line}" | cut -f 20`
     region_function=`echo "${line}" | cut -f 21`
     interactions_genes=`echo "${line}" | cut -f 30 | sed -E 's/[^()]*\(([^)]+)\)[^()]*/\1,/g; s/,$//'`
-    #pocket_value=`echo "${line}" | cut -f 31 | grep -oP 'score:\K[0-9.]+'`
-    pocket_value=$(echo "${line}" | cut -f 31 | grep -oP 'score:\K[0-9.]+' | tr '\n' ';' | sed 's/;$//') # Este campo no se mostrará, solo la etiqueta pocket_label
-    pocket_value=${pocket_value:-"-"} # Añade un guión en el caso de que el campo 31 esté vacío
+    pocket_value=$(echo "${line}" | cut -f 31 | grep -oP 'score:\K[0-9.]+' | tr '\n' ';' | sed 's/;$//')
+    pocket_value=${pocket_value:-"-"}
     pocket_label=$(echo "$pocket_value" | awk -F';' '{for(i=1;i<=NF;i++) {if($i=="-" || $i=="") printf "-"; else if($i>900) printf "very high"; else if($i>=800) printf "high"; else printf "low"; if(i<NF) printf ";"}; print ""}')
-    alphafold=`echo "${line}" | cut -f 33` # Este campo no se mostrará
-    foldxDdg=$(echo "$alphafold" | grep -oE 'foldxDdg:-?[0-9.]+' | cut -d':' -f2 | paste -sd ';' -); [ -z "$foldxDdg" ] && foldxDdg="-" # Este campo no se mostrará
-    plddt=$(echo "$alphafold" | grep -oE 'plddt:-?[0-9.]+' | cut -d':' -f2 | paste -sd ';' -); [ -z "$plddt" ] && plddt="-" # Este campo no se mostrará
-    foldxDdg_label=$(echo "$foldxDdg" | awk -F';' '$1=="-"{print "-";next} {for(i=1;i<=NF;i++) printf "%s%s", ($i>2?"destabilising":"stabilising/neutral"), (i==NF?ORS:";")}')  # Título de columna Alphafold-foldxDdg
-    plddt_label=$(echo "$plddt" | awk -F';' '$1=="-"{print "-";next} {for(i=1;i<=NF;i++) {l=($i>90?"Very high":($i>70?"High":($i>50?"Low":"Very low"))); printf "%s%s", l, (i==NF?ORS:";")}}')  # Título de columna Alphafold-plddt
+    alphafold=`echo "${line}" | cut -f 33`
+    foldxDdg=$(echo "$alphafold" | grep -oE 'foldxDdg:-?[0-9.]+' | cut -d':' -f2 | paste -sd ';' -); [ -z "$foldxDdg" ] && foldxDdg="-"
+    plddt=$(echo "$alphafold" | grep -oE 'plddt:-?[0-9.]+' | cut -d':' -f2 | paste -sd ';' -); [ -z "$plddt" ] && plddt="-"
+    foldxDdg_label=$(echo "$foldxDdg" | awk -F';' '$1=="-"{print "-";next} {for(i=1;i<=NF;i++) printf "%s%s", ($i>2?"destabilising":"stabilising/neutral"), (i==NF?ORS:";")}')
+    plddt_label=$(echo "$plddt" | awk -F';' '$1=="-"{print "-";next} {for(i=1;i<=NF;i++) {l=($i>90?"Very high":($i>70?"High":($i>50?"Low":"Very low"))); printf "%s%s", l, (i==NF?ORS:";")}}')
     conservartion=`echo "${line}" | cut -f 34`
     alphamissense=`echo "${line}" | cut -f 35 | sed -n 's/.*(\(.*\))/\1/p'`
-    alphamissense=${alphamissense:-"-"}        # Si la variante no tenía alphamissense, añade guión
+    alphamissense=${alphamissense:-"-"}
     popeve=`echo "${line}" | cut -f 36 | sed -n 's/.*(\(.*\))/\1/p'`  
-    popeve=${popeve:-"-"}        # Si la variante no tenía popeve, añade guión
-    esm1b_value=`echo "${line}" | cut -f 37` # Este campo no se mostrará
+    popeve=${popeve:-"-"}
+    esm1b_value=`echo "${line}" | cut -f 37`
     esm1b_label=$(echo "$esm1b_value" | awk '{val=$1; if(val == "" || val == "-") {print "-"} else if(val <= 0 && val >= -5) {print "benign"} else if(val < -5 && val >= -10) {print "uncertain"} else if(val < -10 && val >= -25) {print "pathogenic"} else {print "-"}}')
     diseases=`echo "${line}" | cut -f 42 | sed 's/N\/A/-/g'`
 
+    echo -e "${user_variant}\t${grch38_coord}\t${gene}\t${uniprot_id}\t${consequence}\t${codon_change}\t${aa_acid_change_4manual}\t${residue_function}\t${region_function}\t${interactions_genes}\t${pocket_label}\t${foldxDdg_label}\t${plddt_label}\t${conservartion}\t${alphamissense}\t${popeve}\t${esm1b_label}\t${diseases}"
 
-    ## Look for PTMs 
-    ########################################
-
-    ptm_url="https://www.ebi.ac.uk/ProtVar/api/function/${uniprot_id}/${aa_acid_position}?variantAA=${new_aa_acid}"
-
-    # Intentar realizar la petición (-s para silencioso, -f para que falle si el código HTTP != 2xx)
-    response=$(curl -s -f -X 'GET' "$ptm_url" -H 'accept: application/json')
-
-    # Si curl falla (la URL devuelve error o no responde), se captura aquí
-    if [ $? -ne 0 ]; then
-      ptm_info="Not url"
-    else
-      # Parsear el JSON obtenido
-      ptm_info=$(echo "$response" | jq -r '
-        [
-          .comments[]? 
-          | select(.type == "PTM") 
-          | .text[]? 
-          | .value + " (" + ([.evidences[]?.source | .name + ", " + .id] | join("; ")) + ")"
-        ] 
-        | if length > 0 then join("; ") else "Not ptm" end
-      ')
-    fi
-
-    echo -e "${user_variant}\t${grch38_coord}\t${gene}\t${uniprot_id}\t${consequence}\t${codon_change}\t${aa_acid_change_4manual}\t${residue_function}\t${region_function}\t${interactions_genes}\t${pocket_label}\t${foldxDdg_label}\t${plddt_label}\t${conservartion}\t${alphamissense}\t${popeve}\t${esm1b_label}\t${ptm_info}\t${diseases}"
-
-done < "${input_file}" > ProtVarAnnot_"${input_file}"
+done < "${input_file}" > "${output_file}"
 
 
 # Modify header
+sed -i '1d' "${output_file}"
+sed -i "1s/^/user_variant\\tgrch38_coord\\tgene\\tuniprot_id\\tconsequence\\tcodon_change\\taa_acid_change\\tresidue_function\\tregion_function\\tinteractions_genes\\tpocket_label\\talphafold-foldxDdg\\talphafold-plddt\\tconservation\\talphamissense\\tpopeve\\tesm1b\\tdiseases\\n/" "${output_file}"
 
-sed -i '1d' ProtVarAnnot_"${input_file}"
-sed -i "1s/^/user_variant\\tgrch38_coord\\tgene\\tuniprot_id\\tconsequence\\tcodon_change\\taa_acid_change\\tresidue_function\\tregion_function\\tinteractions_genes\\tpocket_label\\talphafold-foldxDdg\\talphafold-plddt\\tconservation\\talphamissense\\tpopeve\\tesm1b\\tptm\\tdiseases\\n/" ProtVarAnnot_"${input_file}"
-
-# Add manually curated UniProt annotations
-
-./annotate_humsavar.sh ProtVarAnnot_"${input_file}"
-
-mv humansavarAnnot_ProtVarAnnot_"${input_file}" ProtVarAnnot_"${input_file}"
+echo "Parsing completed: ${output_file}"
