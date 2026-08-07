@@ -138,7 +138,7 @@ awk -F'\t' 'BEGIN { OFS="\t" }
     
     # ESM1b score label
     esm1b_val = $37
-    if (esm1b_val == "" || esm1b_val == "-") {
+    if (esm1b_val == "" || esm1b_val == "-" || esm1b_val == "N/A") {
         esm1b_label = "-"
     } else {
         val = esm1b_val + 0
