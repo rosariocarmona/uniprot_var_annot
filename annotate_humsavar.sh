@@ -4,8 +4,8 @@
 set -e
 
 # 1. Validar el argumento de entrada
-if [ $# -ne 1 ]; then
-    echo "Uso: $0 <fichero_de_entrada.tsv>"
+if [ $# -lt 1 ]; then
+    echo "Uso: $0 <fichero_de_entrada.tsv> [<fichero_de_salida.tsv>]"
     exit 1
 fi
 
@@ -38,13 +38,16 @@ mv "$RAW_HUMSAVAR" "$DB_FILE"
 echo "Archivo de base de datos guardado como: $DB_FILE"
 
 # 4. Determinar nombre del fichero de salida
-BASENAME=$(basename "$INPUT_FILE")
-DIRNAME=$(dirname "$INPUT_FILE")
-
-if [ "$DIRNAME" = "." ]; then
-    OUTPUT_FILE="humansavarAnnot_${BASENAME}"
+if [ $# -ge 2 ]; then
+    OUTPUT_FILE="$2"
 else
-    OUTPUT_FILE="${DIRNAME}/humansavarAnnot_${BASENAME}"
+    BASENAME=$(basename "$INPUT_FILE")
+    DIRNAME=$(dirname "$INPUT_FILE")
+    if [ "$DIRNAME" = "." ]; then
+        OUTPUT_FILE="humansavarAnnot_${BASENAME}"
+    else
+        OUTPUT_FILE="${DIRNAME}/humansavarAnnot_${BASENAME}"
+    fi
 fi
 
 echo "Procesando la anotación en $OUTPUT_FILE ..."
