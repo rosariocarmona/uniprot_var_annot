@@ -47,44 +47,115 @@ else
     fi
 fi
 
-while read line; do 
+awk -F'\t' 'BEGIN { OFS="\t" }
+{
+    # 1. Skip the original header and print the custom header
+    if (NR == 1) {
+        print "user_variant", "grch38_coord", "gene", "uniprot_id", "consequence", "codon_change", "aa_acid_change", "residue_function", "region_function", "interactions_genes", "pocket_label", "alphafold-foldxDdg", "alphafold-plddt", "conservation", "alphamissense", "popeve", "esm1b", "diseases"
+        next
+    }
 
-    user_variant=`echo "${line}" | cut -f 1`
-    grch38_coord=`echo "${line}" | cut -f 2,3,5,6 | sed 's/\t/:/g'`
-    gene=`echo "${line}" | cut -f 8`
-    uniprot_id=`echo "${line}" | cut -f 14`
-    consequence=`echo "${line}" | cut -f 19`
-    codon_change=`echo "${line}" | cut -f 9`
-    aa_acid_position=`echo "${line}" | cut -f 17`
-    aa_acid_change=`echo "${line}" | cut -f 18`
-    aa_acid_change_4manual=`echo -e "p.${aa_acid_change}" | sed "s/\//${aa_acid_position}/g"`
-    residue_function=`echo "${line}" | cut -f 20`
-    region_function=`echo "${line}" | cut -f 21`
-    interactions_genes=`echo "${line}" | cut -f 30 | sed -E 's/[^()]*\(([^)]+)\)[^()]*/\1,/g; s/,$//'`
-    pocket_value=$(echo "${line}" | cut -f 31 | grep -oP 'score:\K[0-9.]+' | tr '\n' ';' | sed 's/;$//')
-    pocket_value=${pocket_value:-"-"}
-    pocket_label=$(echo "$pocket_value" | awk -F';' '{for(i=1;i<=NF;i++) {if($i=="-" || $i=="") printf "-"; else if($i>900) printf "very high"; else if($i>=800) printf "high"; else printf "low"; if(i<NF) printf ";"}; print ""}')
-    alphafold=`echo "${line}" | cut -f 33`
-    foldxDdg=$(echo "$alphafold" | grep -oE 'foldxDdg:-?[0-9.]+' | cut -d':' -f2 | paste -sd ';' -); [ -z "$foldxDdg" ] && foldxDdg="-"
-    plddt=$(echo "$alphafold" | grep -oE 'plddt:-?[0-9.]+' | cut -d':' -f2 | paste -sd ';' -); [ -z "$plddt" ] && plddt="-"
-    foldxDdg_label=$(echo "$foldxDdg" | awk -F';' '$1=="-"{print "-";next} {for(i=1;i<=NF;i++) printf "%s%s", ($i>2?"destabilising":"stabilising/neutral"), (i==NF?ORS:";")}')
-    plddt_label=$(echo "$plddt" | awk -F';' '$1=="-"{print "-";next} {for(i=1;i<=NF;i++) {l=($i>90?"Very high":($i>70?"High":($i>50?"Low":"Very low"))); printf "%s%s", l, (i==NF?ORS:";")}}')
-    conservartion=`echo "${line}" | cut -f 34`
-    alphamissense=`echo "${line}" | cut -f 35 | sed -n 's/.*(\(.*\))/\1/p'`
-    alphamissense=${alphamissense:-"-"}
-    popeve=`echo "${line}" | cut -f 36 | sed -n 's/.*(\(.*\))/\1/p'`  
-    popeve=${popeve:-"-"}
-    esm1b_value=`echo "${line}" | cut -f 37`
-    esm1b_label=$(echo "$esm1b_value" | awk '{val=$1; if(val == "" || val == "-") {print "-"} else if(val <= 0 && val >= -5) {print "benign"} else if(val < -5 && val >= -10) {print "uncertain"} else if(val < -10 && val >= -25) {print "pathogenic"} else {print "-"}}')
-    diseases=`echo "${line}" | cut -f 42 | sed 's/N\/A/-/g'`
+    # 2. Extract fields (awk is 1-indexed)
+    user_variant = $1
+    grch38_coord = $2 ":" $3 ":" $5 ":" $6
+    gene = $8
+    uniprot_id = $14
+    consequence = $19
+    codon_change = $9
+    aa_acid_position = $17
+    aa_acid_change = $18
+    
+    aa_acid_change_4manual = "p." aa_acid_change
+    gsub("/", aa_acid_position, aa_acid_change_4manual)
+    
+    residue_function = $20
+    region_function = $21
+    
+    # Interactions genes (extracting content inside parentheses)
+    interactions_genes = ""
+    str = $30
+    while (match(str, /\(([^)]+)\)/)) {
+        val = substr(str, RSTART+1, RLENGTH-2)
+        interactions_genes = (interactions_genes == "") ? val : interactions_genes "," val
+        str = substr(str, RSTART+RLENGTH)
+    }
+    if (interactions_genes == "") interactions_genes = "-"
+    
+    # Pocket labels (extracting score:X)
+    pocket_str = $31
+    pocket_label = ""
+    while (match(pocket_str, /score:([0-9.]+)/)) {
+        val = substr(pocket_str, RSTART+6, RLENGTH-6) + 0
+        if (val > 900) l = "very high"
+        else if (val >= 800) l = "high"
+        else l = "low"
+        
+        pocket_label = (pocket_label == "") ? l : pocket_label ";" l
+        pocket_str = substr(pocket_str, RSTART+RLENGTH)
+    }
+    if (pocket_label == "") pocket_label = "-"
+    
+    # AlphaFold foldxDdg and plddt labels
+    alphafold = $33
+    foldxDdg_label = ""
+    plddt_label = ""
+    
+    af_str = alphafold
+    while (match(af_str, /foldxDdg:(-?[0-9.]+)/)) {
+        val = substr(af_str, RSTART+9, RLENGTH-9) + 0
+        l = (val > 2) ? "destabilising" : "stabilising/neutral"
+        foldxDdg_label = (foldxDdg_label == "") ? l : foldxDdg_label ";" l
+        af_str = substr(af_str, RSTART+RLENGTH)
+    }
+    if (foldxDdg_label == "") foldxDdg_label = "-"
+    
+    af_str = alphafold
+    while (match(af_str, /plddt:(-?[0-9.]+)/)) {
+        val = substr(af_str, RSTART+6, RLENGTH-6) + 0
+        if (val > 90) l = "Very high"
+        else if (val > 70) l = "High"
+        else if (val > 50) l = "Low"
+        else l = "Very low"
+        plddt_label = (plddt_label == "") ? l : plddt_label ";" l
+        af_str = substr(af_str, RSTART+RLENGTH)
+    }
+    if (plddt_label == "") plddt_label = "-"
+    
+    conservation = $34
+    if (conservation == "") conservation = "-"
+    
+    # AlphaMissense (extracting content inside parentheses)
+    alphamissense = "-"
+    if (match($35, /\(([^)]+)\)/)) {
+        alphamissense = substr($35, RSTART+1, RLENGTH-2)
+    }
+    
+    # popEVE (extracting content inside parentheses)
+    popeve = "-"
+    if (match($36, /\(([^)]+)\)/)) {
+        popeve = substr($36, RSTART+1, RLENGTH-2)
+    }
+    
+    # ESM1b score label
+    esm1b_val = $37
+    if (esm1b_val == "" || esm1b_val == "-") {
+        esm1b_label = "-"
+    } else {
+        val = esm1b_val + 0
+        if (val <= 0 && val >= -5) esm1b_label = "benign"
+        else if (val < -5 && val >= -10) esm1b_label = "uncertain"
+        else if (val < -10 && val >= -25) esm1b_label = "pathogenic"
+        else esm1b_label = "-"
+    }
+    
+    # Diseases
+    diseases = $42
+    gsub("N/A", "-", diseases)
+    if (diseases == "") diseases = "-"
+    
+    # Print the parsed line
+    print user_variant, grch38_coord, gene, uniprot_id, consequence, codon_change, aa_acid_change_4manual, residue_function, region_function, interactions_genes, pocket_label, foldxDdg_label, plddt_label, conservation, alphamissense, popeve, esm1b_label, diseases
 
-    echo -e "${user_variant}\t${grch38_coord}\t${gene}\t${uniprot_id}\t${consequence}\t${codon_change}\t${aa_acid_change_4manual}\t${residue_function}\t${region_function}\t${interactions_genes}\t${pocket_label}\t${foldxDdg_label}\t${plddt_label}\t${conservartion}\t${alphamissense}\t${popeve}\t${esm1b_label}\t${diseases}"
-
-done < "${input_file}" > "${output_file}"
-
-
-# Modify header
-sed -i '1d' "${output_file}"
-sed -i "1s/^/user_variant\\tgrch38_coord\\tgene\\tuniprot_id\\tconsequence\\tcodon_change\\taa_acid_change\\tresidue_function\\tregion_function\\tinteractions_genes\\tpocket_label\\talphafold-foldxDdg\\talphafold-plddt\\tconservation\\talphamissense\\tpopeve\\tesm1b\\tdiseases\\n/" "${output_file}"
+}' "$input_file" > "$output_file"
 
 echo "Parsing completed: ${output_file}"
