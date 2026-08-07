@@ -30,7 +30,7 @@ fi
 # Define intermediate and final output files
 RESULTS_DIR="results/${job_label}"
 RAW_RESULTS="${RESULTS_DIR}/${job_label}_results.tsv"
-PARSED_RESULTS="${RESULTS_DIR}/${job_label}_parsed.tsv"
+PARSED_RESULTS="${RESULTS_DIR}/ProtVarAnnot_${job_label}.tsv"
 PTM_RESULTS="${RESULTS_DIR}/${job_label}_ptm.tsv"
 FINAL_RESULTS="${RESULTS_DIR}/UniProtAnnot_${job_label}.tsv"
 

@@ -35,7 +35,17 @@ input_file=$1
 #     42  Diseases_associated_with_variant  ->
 
 
-output_file=${2:-"parsed_${input_file}"}
+if [ -n "$2" ]; then
+    output_file="$2"
+else
+    DIRNAME=$(dirname "$input_file")
+    BASENAME=$(basename "$input_file")
+    if [ "$DIRNAME" = "." ]; then
+        output_file="ProtVarAnnot_${BASENAME}"
+    else
+        output_file="${DIRNAME}/ProtVarAnnot_${BASENAME}"
+    fi
+fi
 
 while read line; do 
 
