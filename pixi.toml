@@ -1,0 +1,12 @@
+[workspace]
+authors = ["rosariocarmona <rosariocarmona@gmail.com>"]
+channels = ["conda-forge"]
+name = "uniprot_var_annot"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+python = "3.12.*"
+requests = ">=2.34.2,<3"
