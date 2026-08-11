@@ -87,7 +87,8 @@ echo "Found $total_queries unique queries. Fetching from API in parallel..."
 # 3. Parallel Fetching using xargs -P (20 concurrent connections)
 export tmp_dir
 xargs -P 20 -n 3 -a "$queries_file" bash -c 'export_fetch_ptm "$1" "$2" "$3" > "${tmp_dir}/results/${1}_${2}_${3}.txt"' _
-cat "${tmp_dir}/results"/*.txt > "$results_file"
+# Use find with -exec to avoid "Argument list too long" error for a large number of files
+find "${tmp_dir}/results" -name "*.txt" -exec cat {} + > "$results_file"
 
 echo "API fetching complete. Merging results into TSV..."
 
