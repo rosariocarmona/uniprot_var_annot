@@ -4,3 +4,6 @@ DEL/
 scratch
 results*
 databases/
+# pixi environments
+.pixi/*
+!.pixi/config.toml
