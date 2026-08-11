@@ -7,3 +7,6 @@ databases/
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+submit_pipeline.slurm
+sync_to_expanse.sh
+data/csvs_all_variants_grch37_NOINDELS.txt
