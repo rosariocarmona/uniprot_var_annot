@@ -4,10 +4,15 @@ Small CLI tools for working with the ProtVar API.
 
 ## Setup
 
+We manage the environment using [`pixi`](https://pixi.sh). To set up the environment and install dependencies, simply run:
+
 ```bash
-python3 -m venv ~/my_envs/pv_api_env/
-source ~/my_envs/pv_api_env/bin/activate
-pip install -r requirements.txt
+pixi install
+```
+
+You can then run the pipeline directly within the pixi environment. For example:
+```bash
+pixi run bash run_pipeline.sh data/test.txt GRCh37 test_run
 ```
 
 ## Overview
@@ -27,6 +32,39 @@ Sample input is in `data/test.txt`.
 - `create_download.py` writes the download job ID to `--jobid-file`.
 - `retrieve.py` writes downloaded files to `--outdir` while preserving the ProtVar filenames.
 - Parent directories for output paths are created automatically.
+
+## HPC / Slurm Usage
+
+If you are running on an HPC cluster with Slurm, you can submit the pipeline using an `sbatch` script. Below is a minimal example using a small dataset included in the repository (`data/test.txt`). You can save this as `submit_pipeline.slurm` (which is git-ignored) and submit it with `sbatch submit_pipeline.slurm`:
+
+```bash
+#!/bin/bash
+#SBATCH --job-name=uniprot_annot
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=30
+#SBATCH --mem=90G
+#SBATCH --time=24:00:00
+#SBATCH --output=uniprot_annot_%j.log
+#SBATCH --error=uniprot_annot_%j.err
+
+# Exit if any command fails
+set -e
+
+# Define input parameters
+INPUT_FILE="data/test.txt"
+ASSEMBLY="GRCh37"
+JOB_LABEL="test_job"
+
+echo "========================================================="
+echo "Starting UniProt Annotation Pipeline"
+echo "========================================================="
+
+# Ensure the environment is ready and run the pipeline
+pixi run bash run_pipeline.sh "$INPUT_FILE" "$ASSEMBLY" "$JOB_LABEL"
+
+echo "Pipeline finished successfully!"
+```
 
 ## ID flow
 
