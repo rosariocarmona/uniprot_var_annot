@@ -30,11 +30,9 @@ if [ "$assembly" != "GRCh37" ] && [ "$assembly" != "GRCh38" ]; then
 fi
 
 # Setup
-#########################################################
-python3 -m venv ~/my_envs/pv_api_env/
-source ~/my_envs/pv_api_env/bin/activate
-# Only for the first time it is run
-#pip install -r requirements.txt
+# The environment is now managed by pixi. 
+# We assume 'pixi run' was used, so python and dependencies are already available.
+
 
 # Prepares batches
 #########################################################
@@ -138,8 +136,4 @@ rm -f "$final_output"
 
 echo "========================================================="
 echo "Process completed for all batches!"
-echo "========================================================="
-
-deactivate
-
 
