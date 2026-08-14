@@ -17,6 +17,7 @@ input_file=$1
 #      3  Coordinate ->
 #      5  Reference_allele ->
 #      6  Alternative_allele ->
+#      7  Notes ->
 #      8  Gene ->
 #      9  Codon_change ->
 #     14  Uniprot_canonical_isoform_(non_canonical) ->
@@ -55,7 +56,13 @@ awk -F'\t' 'BEGIN { OFS="\t" }
         next
     }
 
-    # 2. Extract fields (awk is 1-indexed)
+    # 2. Filter out unmapped variants and reference allele mismatch warnings (Column 7: Notes)
+    notes = $7
+    if (notes ~ /No mapping found/ || notes ~ /WARN:User input reference allele \([^)]*\) does not match the UniProt sequence \([^)]*\) at the genomic location/) {
+        next
+    }
+
+    # 3. Extract fields (awk is 1-indexed)
     user_variant = $1
     grch38_coord = $2 ":" $3 ":" $5 ":" $6
     gene = $8
