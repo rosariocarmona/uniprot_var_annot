@@ -10,3 +10,6 @@ databases/
 submit_pipeline.slurm
 sync_to_expanse.sh
 data/csvs_all_variants_grch37_NOINDELS.txt
+data/benchmarking_grch37
+data/benchmarking_grch38
+tests/test_find_limit.sh
