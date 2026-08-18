@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Master script to run the full UniProt Variant Annotation Pipeline
-# Usage: ./run_pipeline.sh <variants_file.txt> <assembly> <job_label>
+# Usage: pixi run bash run_pipeline.sh <variants_file.txt> <assembly> <job_label>
 
 set -e
 
@@ -13,7 +13,7 @@ job_label=$3
 # Validate arguments
 if [ -z "$input_file" ] || [ -z "$assembly" ] || [ -z "$job_label" ]; then
     echo "Error: Missing arguments."
-    echo "Usage: $0 <variants_file.txt> <assembly> <job_label>"
+    echo "Usage: pixi run bash run_pipeline.sh <variants_file.txt> <assembly> <job_label>"
     if [ -z "$assembly" ]; then
         echo "Note: The <assembly> argument can take the values: GRCh37 or GRCh38."
     fi
@@ -23,7 +23,7 @@ fi
 if [ "$assembly" != "GRCh37" ] && [ "$assembly" != "GRCh38" ]; then
     echo "Error: Invalid assembly value '$assembly'."
     echo "Allowed values for <assembly>: GRCh37 or GRCh38."
-    echo "Usage: $0 <variants_file.txt> <assembly> <job_label>"
+    echo "Usage: pixi run bash run_pipeline.sh <variants_file.txt> <assembly> <job_label>"
     exit 1
 fi
 

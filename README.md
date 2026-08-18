@@ -1,41 +1,143 @@
-# ProtVar API Tools
+# UniProt Variant Annotation Pipeline
 
-Small CLI tools for working with the ProtVar API.
+An automated, high-performance bioinformatic pipeline for annotating human genomic variants. The pipeline queries the EBI ProtVar API, parses and filters functional/structural predictions, enriches variants with Post-Translational Modifications (PTMs), and cross-references curated disease classifications from UniProt Humsavar.
 
-## Setup
+---
 
-We manage the environment using [`pixi`](https://pixi.sh). To set up the environment and install dependencies, simply run:
+## Table of Contents
+
+- [Overview](#overview)
+- [Setup & Requirements](#setup--requirements)
+- [Quick Start](#quick-start)
+- [Pipeline Architecture & Workflow](#pipeline-architecture--workflow)
+- [Output Data Schema](#output-data-schema)
+- [HPC / Slurm Execution](#hpc--slurm-execution)
+- [Low-Level ProtVar API Tools](#low-level-protvar-api-tools)
+- [Assembly & Technical Notes](#assembly--technical-notes)
+
+---
+
+## Overview
+
+The **UniProt Variant Annotation Pipeline** streamlines variant interpretation by executing a 4-step workflow:
+
+1. **ProtVar API Batch Querying**: Submits variants in parallel batches (100,000 variants/chunk) to EBI ProtVar.
+2. **Annotation Parsing & Quality Filtering**: Filters out unmapped variants and reference allele mismatches while extracting functional, structural, and pathogenicity scores.
+3. **PTM Enrichment**: Queries the EBI ProtVar REST API in parallel (`xargs -P 20`) to annotate Post-Translational Modifications.
+4. **UniProt Humsavar Disease Variant Cross-Referencing**: Annotates curated human disease variant classifications (`humsavar.txt`).
+
+---
+
+## Setup & Requirements
+
+The environment is managed using [`pixi`](https://pixi.sh). To set up the environment and install required dependencies (`python 3.12`, `requests`), run:
 
 ```bash
 pixi install
 ```
 
-You can then run the pipeline directly within the pixi environment. For example:
+All pipeline commands can then be executed inside the `pixi` environment.
+
+---
+
+## Quick Start
+
+Run the full annotation pipeline using `run_pipeline.sh`:
+
+```bash
+pixi run bash run_pipeline.sh <variants_file> <assembly> <job_label>
+```
+
+### Parameters:
+- `<variants_file>`: Path to the input text file containing one variant per line (e.g. `10-98251583-C-T` or `10:100011120:A:T`). The pipeline accepts direct file paths (e.g., `data/test.txt` or `test.txt` inside the `data/` directory).
+- `<assembly>`: Reference genome assembly for input variant coordinates. Must be **`GRCh37`** or **`GRCh38`**.
+- `<job_label>`: Unique name/identifier for the run. Output files will be organized under `results/<job_label>/`.
+
+### Example:
 ```bash
 pixi run bash run_pipeline.sh data/test.txt GRCh37 test_run
 ```
 
-## Overview
+**Final Output Location**: `results/test_run/UniProtAnnot_test_run.tsv`
 
-- `submit.py` uploads a variant file and writes the ProtVar upload `resultId`.
-- `create_download.py` creates a download job from that `resultId`.
-- `poll.py` checks the download job status.
-- `retrieve.py` downloads one or more finished result files and keeps the ProtVar filenames.
+---
 
-## Input data
+## Pipeline Architecture & Workflow
 
-Sample input is in `data/test.txt`.
+The master script `run_pipeline.sh` orchestrates four sequential steps:
 
-## Output locations
+```mermaid
+flowchart TD
+    A[Input Variants File] --> B[Step 1: launch_ProtVar.sh]
+    B -->|ProtVar API Batch Querying| C[ProtVarAPIoutput_joblabel.tsv]
+    C --> D[Step 2: parse_AnnotProtVar.sh]
+    D -->|Parsing & Mismatch Filtering| E[ProtVarAnnot_joblabel.tsv]
+    E --> F[Step 3: annotate_ptm.sh]
+    F -->|Parallel PTM REST Querying| G[joblabel_ptm.tsv]
+    G --> H[Step 4: annotate_humsavar.sh]
+    H -->|UniProt Humsavar Cross-Ref| I[UniProtAnnot_joblabel.tsv]
+```
 
-- `submit.py` writes the upload `resultId` to `--jobid-file`.
-- `create_download.py` writes the download job ID to `--jobid-file`.
-- `retrieve.py` writes downloaded files to `--outdir` while preserving the ProtVar filenames.
-- Parent directories for output paths are created automatically.
+### Step 1: ProtVar API Querying (`launch_ProtVar.sh`)
+- Splits large variant lists into sub-batches of 100,000 variants each in a temporary directory.
+- Sequentially uploads batches via `submit.py`, requests full annotations via `create_download.py`, polls for completion via `poll.py`, and streams zipped CSV output files using `retrieve.py`.
+- Aggregates unzipped CSV output chunks and converts them into a master TSV file: `results/<job_label>/ProtVarAPIoutput_<job_label>.tsv`.
 
-## HPC / Slurm Usage
+### Step 2: Parsing & Quality Filtering (`parse_AnnotProtVar.sh`)
+- Extracts 18 key annotation fields including HGVS amino acid change notation, binding pockets, FoldX stability predictions, AlphaFold pLDDT scores, evolutionary conservation, AlphaMissense, popEVE, and ESM1b pathogenicity classes.
+- **Quality Filter**: Discards unmapped variants (`No mapping found`) and reference allele mismatch warnings (`WARN:User input reference allele (...) does not match the UniProt sequence (...)`).
+- Output: `results/<job_label>/ProtVarAnnot_<job_label>.tsv`.
 
-If you are running on an HPC cluster with Slurm, you can submit the pipeline using an `sbatch` script. Below is a minimal example using a small dataset included in the repository (`data/test.txt`). You can save this as `submit_pipeline.slurm` (which is git-ignored) and submit it with `sbatch submit_pipeline.slurm`:
+### Step 3: PTM Annotation (`annotate_ptm.sh`)
+- Extracts unique `(uniprot_id, position, new_aa)` tuples from parsed variants to minimize redundant network calls.
+- Executes parallel REST API requests against EBI ProtVar (`xargs -P 20`) using `curl` and `jq`.
+- Performs an in-memory `awk` merge to inject the `ptm` annotation column.
+- Output: `results/<job_label>/<job_label>_ptm.tsv`.
+
+### Step 4: UniProt Humsavar Disease Annotation (`annotate_humsavar.sh`)
+- Automatically downloads and caches the latest UniProt `humsavar.txt` dataset into `databases/humsavar_<RELEASE>.txt`.
+- Matches variants on `(gene, uniprot_id, aa_acid_change)`.
+- Appends the `UniProt_CuratedClassif` column and generates the final output file: `results/<job_label>/UniProtAnnot_<job_label>.tsv`.
+
+---
+
+## Output Data Schema
+
+The final output file (`results/<job_label>/UniProtAnnot_<job_label>.tsv`) is a tab-separated file containing the following 19 columns:
+
+| Column Number | Column Name | Description | Example / Values |
+|---|---|---|---|
+| 1 | `user_variant` | Original variant string provided in input | `10-98251583-C-T` |
+| 2 | `grch38_coord` | Mapped genomic position (`chr:pos:ref:alt`) | `10:98251583:C:T` |
+| 3 | `gene` | Associated gene symbol | `FGFR2` |
+| 4 | `uniprot_id` | Canonical UniProt accession ID | `P21802` |
+| 5 | `consequence` | Variant consequence term | `missense_variant` |
+| 6 | `codon_change` | Nucleotide codon change | `tTg/tCg` |
+| 7 | `aa_acid_change` | Amino acid substitution in HGVS format | `p.Leu380Ser` |
+| 8 | `residue_function` | Specific UniProt residue functional annotation & evidence | `ACT_SITE (By similarity)` |
+| 9 | `region_function` | Domain/region functional annotation & evidence | `DOMAIN Protein kinase` |
+| 10 | `interactions_genes` | Interacting gene symbols | `GRB2,STAT1` or `-` |
+| 11 | `pocket_label` | AlphaFold predicted pocket presence confidence | `very high`, `high`, `low`, `-` |
+| 12 | `alphafold-foldxDdg` | FoldX predicted protein stability impact | `destabilising`, `stabilising/neutral`, `-` |
+| 13 | `alphafold-plddt` | AlphaFold structural confidence level | `Very high`, `High`, `Low`, `Very low`, `-` |
+| 14 | `conservation` | Position evolutionary conservation score | Scale `0-1` (`1` = highly conserved) |
+| 15 | `alphamissense` | AlphaMissense pathogenicity class | `likely_pathogenic`, `likely_benign`, `ambiguous`, `-` |
+| 16 | `popeve` | popEVE population impact score | `popEVE score` or `-` |
+| 17 | `esm1b` | ESM1b language model score class | `pathogenic`, `uncertain`, `benign`, `-` |
+| 18 | `ptm` | Post-Translational Modification annotation & evidence | `Phosphoserine (...)` or `Not ptm` |
+| 19 | `UniProt_CuratedClassif` | UniProt Humsavar curated human disease classification | `LP/P (Pfeiffer syndrome)` or `-` |
+
+---
+
+## HPC / Slurm Execution
+
+For high-performance computing clusters running Slurm, submit the pipeline using `sbatch`:
+
+```bash
+sbatch submit_pipeline.slurm
+```
+
+Example `submit_pipeline.slurm` script:
 
 ```bash
 #!/bin/bash
@@ -48,155 +150,46 @@ If you are running on an HPC cluster with Slurm, you can submit the pipeline usi
 #SBATCH --output=uniprot_annot_%j.log
 #SBATCH --error=uniprot_annot_%j.err
 
-# Exit if any command fails
 set -e
 
-# Define input parameters
+# Parameters
 INPUT_FILE="data/test.txt"
 ASSEMBLY="GRCh37"
 JOB_LABEL="test_job"
 
-echo "========================================================="
-echo "Starting UniProt Annotation Pipeline"
-echo "========================================================="
-
-# Ensure the environment is ready and run the pipeline
+echo "Starting UniProt Annotation Pipeline on $(hostname)..."
 pixi run bash run_pipeline.sh "$INPUT_FILE" "$ASSEMBLY" "$JOB_LABEL"
-
 echo "Pipeline finished successfully!"
 ```
 
-## ID flow
+---
 
-1. `submit.py` returns the upload `resultId`.
-2. Pass that same `resultId` to `create_download.py`.
-3. `create_download.py` returns a separate download job ID.
-4. Pass that download job ID to `poll.py`.
-5. When ready, use `retrieve.py` with the remote download ID/filename returned by ProtVar.
+## Low-Level ProtVar API Tools
 
-## `submit.py`
+If you need to interact with the EBI ProtVar API directly outside the master pipeline, the repository includes modular Python CLI tools:
 
-Upload a plain-text variant file, one variant per line.
+- **`submit.py`**: Uploads a variant file and returns an upload `resultId`.
+  ```bash
+  python submit.py --input data/test.txt --assembly GRCh37 --jobid-file results/jobid.txt
+  ```
+- **`create_download.py`**: Requests a download job for a given `resultId`.
+  ```bash
+  python create_download.py --result-id results/jobid.txt --assembly GRCh37 --annotations full --jobid-file results/download_jobid.txt
+  ```
+- **`poll.py`**: Checks the status (`queued`, `processing`, `ready`, `failed`) of a download job.
+  ```bash
+  python poll.py --job-id results/download_jobid.txt
+  ```
+- **`retrieve.py`**: Streams finished result `.zip` files from ProtVar to disk.
+  ```bash
+  python retrieve.py --download-id results/download_jobid.txt --outdir results/
+  ```
 
-Options:
-- `--input` required, path to the variant file.
-- `--assembly` optional, one of `AUTO`, `GRCh37`, `GRCh38`. Default: `GRCh37`.
-- `--jobid-file` optional, output file for the returned upload `resultId`.
-- `--timeout` optional, request timeout in seconds.
+---
 
-Example:
+## Assembly & Technical Notes
 
-```bash
-python submit.py --input data/test.txt --assembly GRCh37 --jobid-file results/jobid.txt
-```
-
-This writes the upload `resultId` to `results/jobid.txt`.
-
-## `create_download.py`
-
-Create a ProtVar download job from the upload `resultId`.
-
-Options:
-- `--result-id` required, the upload `resultId` from `submit.py`, or a file containing it.
-- `--assembly` optional, one of `AUTO`, `GRCh37`, `GRCh38`. Default: `GRCh37`.
-- `--annotations` required, one of `structure`, `function`, `population`, or `full`.
-- `--jobid-file` optional, output file for the returned download job ID.
-- `--timeout` optional, request timeout in seconds.
-
-Example*:
-
-```bash
-python create_download.py --result-id results/jobid.txt --assembly AUTO --annotations full --jobid-file results/download_jobid.txt
-```
-
-This writes the download job ID to `results/download_jobid.txt`.
-That file is local state only, not the remote download filename.
-
-**Note: In local assembly testing, explicit `--assembly GRCh37` during the download step returned unexpectedly few rows for both the small and large GRCh37 inputs. Using `--assembly AUTO` during the download step produced the expected row counts. For the larger input, `AUTO` submit plus `AUTO` download was not text-identical to `GRCh37` submit plus `AUTO` download because one `Alternative_isoform_mappings` field had the same mappings in a different order. See `assembly_auto_vs_grch37_notes.txt`.**
-
-## `poll.py`
-
-Check the status of a ProtVar download job.
-
-Options:
-- `--job-id` required, either the download job ID itself or a file containing it.
-- `--timeout` optional, request timeout in seconds.
-
-Example:
-
-```bash
-python poll.py --job-id results/download_jobid.txt
-```
-
-`poll.py` accepts either the job ID itself or a file containing it.
-
-Status meanings:
-- `queued`
-- `processing`
-- `ready`
-- `failed`
-- `expired`
-
-## `retrieve.py`
-
-Download one or more ready result files.
-
-Downloads are streamed to disk in chunks rather than loaded fully into memory.
-This is safer for large ProtVar zip files, such as full-annotation downloads or
-downloads created from large variant lists.
-
-Options:
-- `--download-id` required, one or more download IDs, or one file containing one or more download IDs, one per line.
-- `--outdir` optional, local output directory. The ProtVar filename is preserved.
-- `--timeout` optional, request timeout in seconds.
-
-Single-ID example:
-
-```bash
-python retrieve.py --download-id results/download_jobid.txt --outdir results/
-```
-
-Multiple IDs on the command line:
-
-```bash
-python retrieve.py --download-id id1 id2 id3 --outdir results/
-```
-
-Multiple IDs from a file:
-
-```text
-id1
-id2
-id3
-```
-
-```bash
-python retrieve.py --download-id results/download_jobids.txt --outdir results/
-```
-
-Use either literal IDs on the command line or one ID file. Do not mix literal IDs and an ID file in the same command.
-
-`results/download_jobid.txt` contains the same download job ID you check with `poll.py`.
-Downloaded files are saved as `results/<ProtVar filename>`.
-
-## Example workflow
-
-```bash
-python submit.py --input data/test.txt --assembly GRCh37 --jobid-file results/jobid.txt
-python create_download.py --result-id results/jobid.txt --assembly AUTO --annotations full --jobid-file results/download_jobid.txt
-python poll.py --job-id results/download_jobid.txt
-python retrieve.py --download-id results/download_jobid.txt --outdir results/
-```
-
-* `create_download.py ... --assembly AUTO` See Note above.
-
-## Notes
-
-- `results/` is a suggested output folder in the examples.
-- The scripts can write wherever you point `--jobid-file` and `--outdir`.
-- `submit.py` and `create_download.py` write IDs to text files so later scripts can reuse them.
-- Assembly comparison details are recorded in `assembly_auto_vs_grch37_notes.txt`.
-  - For the 6-variant test input, `AUTO` submit plus `AUTO` download matched `GRCh37` submit plus `AUTO` download.
-  - For the larger GRCh37 input, `AUTO` submit plus `AUTO` download did not produce text-identical output compared with `GRCh37` submit plus `AUTO` download. The observed difference was ordering within `Alternative_isoform_mappings`.
-  - This behavior has been flagged to the ProtVar team for clarification.
-  - Until clarified, use `--assembly AUTO` for the download step for these GRCh37 inputs.
+- **Assembly Options**: In the main pipeline (`run_pipeline.sh`), the `<assembly>` parameter strictly accepts **`GRCh37`** or **`GRCh38`**. The `AUTO` mode is **not** supported in the general pipeline.
+- **ProtVar API Download Behavior**:
+  - During low-level API testing with GRCh37 variants, passing explicit `--assembly GRCh37` during the download step (`create_download.py`) was observed to return fewer rows from the ProtVar remote server than expected. Passing `--assembly AUTO` during the download step produced full row counts.
+  - Detailed findings and side-by-side comparison logs are documented in `assembly_auto_vs_grch37_notes.txt`.
