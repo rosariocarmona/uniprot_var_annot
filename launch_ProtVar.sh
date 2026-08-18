@@ -34,6 +34,17 @@ fi
 # We assume 'pixi run' was used, so python and dependencies are already available.
 
 
+# Resolve input file path
+if [ -f "$input_file" ]; then
+    resolved_input_file="$input_file"
+elif [ -f "data/$input_file" ]; then
+    resolved_input_file="data/$input_file"
+else
+    echo "Error: Input file '$input_file' does not exist."
+    echo "Checked '$input_file' and 'data/$input_file'."
+    exit 1
+fi
+
 # Prepares batches
 #########################################################
 echo "========================================================="
@@ -48,7 +59,7 @@ mkdir -p "${tmp_dir}/inputs" "${tmp_dir}/outputs"
 
 # Split the original file into chunks of 100000 lines each
 # This will generate files with a 3-digit numeric suffix: batch_000, batch_001, etc.
-split -l 100000 -d -a 3 "data/${input_file}" "${tmp_dir}/inputs/batch_"
+split -l 100000 -d -a 3 "$resolved_input_file" "${tmp_dir}/inputs/batch_"
 
 # Loop to process each batch sequentially
 for batch_path in "${tmp_dir}/inputs"/batch_*; do
